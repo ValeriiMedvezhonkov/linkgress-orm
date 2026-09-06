@@ -989,6 +989,103 @@ export function neAll<V>(
   );
 }
 
+// ============================================================================
+// inArrayOpt / notInArrayOpt — IN list up to a threshold, ANY / ALL above it
+// ============================================================================
+
+/**
+ * Default list length up to which {@link inArrayOpt} renders an `IN ($1, $2, …)` list.
+ *
+ * Why 8, measured on PostgreSQL 18 with named prepared statements (2026-09-06): a
+ * short fixed-length `IN` text gets a cached generic plan after five executions,
+ * while the `= ANY($1)` form is re-planned on every call for one- to ten-element
+ * arrays (its generic plan has to assume ~10 elements, so the custom plan keeps
+ * winning the cost comparison) and only reaches a generic plan from roughly 30
+ * elements on. Up to the threshold the IN form is therefore both faster and cheap
+ * to cache (at most eight small texts per family); above it the array form costs
+ * nothing extra in planning and keeps ONE statement text per family instead of
+ * one per list length.
+ */
+export const DEFAULT_IN_ARRAY_OPT_THRESHOLD = 8;
+
+let inArrayOptThreshold = DEFAULT_IN_ARRAY_OPT_THRESHOLD;
+
+/**
+ * INTERNAL write path behind `LinkgressConfig.inArrayOptThreshold` (and the
+ * `QueryOptions.inArrayOptThreshold` hook). Not part of the package surface —
+ * consumers configure the threshold through `LinkgressConfig`. It lives here,
+ * next to the variable {@link inArrayOpt} reads, so the hot-path read stays a
+ * plain module-level variable access.
+ *
+ * Lists with up to `threshold` elements render as `IN (…)` / `NOT IN (…)`
+ * placeholders; longer lists bind as one array parameter (`= ANY(…)` /
+ * `<> ALL(…)`). `0` sends every non-empty list to the array form.
+ *
+ * @internal
+ */
+export function setInArrayOptThreshold(threshold: number): void {
+  if (!Number.isInteger(threshold) || threshold < 0) {
+    throw new Error(`inArrayOpt threshold must be a non-negative integer, got ${String(threshold)}`);
+  }
+
+  inArrayOptThreshold = threshold;
+}
+
+/**
+ * INTERNAL read path behind `LinkgressConfig.inArrayOptThreshold`.
+ *
+ * @internal
+ */
+export function getInArrayOptThreshold(): number {
+  return inArrayOptThreshold;
+}
+
+/**
+ * List membership that picks the rendering by list length: {@link inArray}'s
+ * `IN ($1, $2, …)` for lists up to the configured threshold, {@link eqAny}'s
+ * `= ANY($1::type[])` above it. Same results as `inArray` for every list,
+ * including the empty one (`1=0`) — only the statement text differs.
+ *
+ * The reason to prefer it over a bare `inArray` wherever the list comes from
+ * data (cart contents, cache misses, id batches) is the prepared-statement
+ * cache: every distinct list length is a distinct statement text, and a family
+ * whose lists range over dozens of lengths keeps dozens of cached plans per
+ * pooled connection. Constant lists (enum members) never exceed a sane
+ * threshold and keep their exact-length `IN` text and planner estimate.
+ *
+ * @example
+ * db.products.where(p => inArrayOpt(p.id, productIds));
+ * // productIds.length <= 8:  "product"."id" IN ($1, $2, $3)
+ * // productIds.length  > 8:  "product"."id" = ANY($1::integer[])
+ */
+export function inArrayOpt<T extends string, V>(
+  column: FieldLike<V> | DbColumn<V> | T | undefined,
+  values: readonly V[]
+): Condition {
+  if (!Array.isArray(values) || values.length <= inArrayOptThreshold) {
+    return inArray(column as FieldLike<V> | T | undefined, values as V[]);
+  }
+
+  return eqAny(column as FieldLike<V> | DbColumn<V> | undefined, values);
+}
+
+/**
+ * The negated counterpart of {@link inArrayOpt}: {@link notInArray}'s
+ * `NOT IN (…)` up to the threshold, {@link neAll}'s `<> ALL($1::type[])` above
+ * it. Same results as `notInArray` for every list (empty list: `1=1`; a NULL
+ * column or a NULL element filters the row out under both forms).
+ */
+export function notInArrayOpt<T extends string, V>(
+  column: FieldLike<V> | DbColumn<V> | T | undefined,
+  values: readonly V[]
+): Condition {
+  if (!Array.isArray(values) || values.length <= inArrayOptThreshold) {
+    return notInArray(column as FieldLike<V> | T | undefined, values as V[]);
+  }
+
+  return neAll(column as FieldLike<V> | DbColumn<V> | undefined, values);
+}
+
 export function isNull<T extends string, V>(
   field: FieldLike<V> | T | undefined
 ): Condition {

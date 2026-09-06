@@ -5,6 +5,7 @@ import { DbEntity, EntityConstructor, EntityMetadataStore } from './entity-base'
 import { DbModelConfig } from './model-config';
 import { JoinQueryBuilder } from '../query/join-builder';
 import { Condition, ConditionBuilder, SqlFragment, SqlBuildContext, UnwrapSelection, FieldRef } from '../query/conditions';
+import { LinkgressConfig } from '../config/linkgress-config';
 import { ResolveCollectionResults, CollectionQueryBuilder, ReferenceQueryBuilder, SelectQueryBuilder, QueryBuilder, QueryContext } from '../query/query-builder';
 import { renumberPlaceholders } from '../query/sql-utils';
 import { PreparedQuery } from '../query/prepared-query';
@@ -183,6 +184,17 @@ export interface QueryOptions {
    * connection `max_lifetime` so per-connection statement caches are recycled.
    */
   preparedStatements?: boolean;
+  /**
+   * List length up to which `inArrayOpt` / `notInArrayOpt` render an `IN (…)` placeholder
+   * list; longer lists bind as ONE array parameter (`= ANY($1::type[])`). Default 8 — see
+   * `DEFAULT_IN_ARRAY_OPT_THRESHOLD` for the measurement behind it. PROCESS-WIDE: the
+   * operators are plain functions used inside `where(...)` lambdas with no context in
+   * reach, so constructing a context with this option writes
+   * `LinkgressConfig.inArrayOptThreshold` for the whole process; the last context
+   * constructed with the option wins. Setting `LinkgressConfig.inArrayOptThreshold`
+   * directly is the same thing without a context.
+   */
+  inArrayOptThreshold?: number;
   /** Collection aggregation strategy (default: 'lateral') */
   collectionStrategy?: CollectionStrategyType;
   /**
@@ -1765,6 +1777,11 @@ export class DataContext<TSchema extends ContextSchema = any> {
     // Create executor if logging is enabled
     if (QueryExecutor.isNeeded(queryOptions)) {
       this.executor = new QueryExecutor(client, queryOptions);
+    }
+
+    // inArrayOpt/notInArrayOpt are context-free functions; the option configures them process-wide.
+    if (queryOptions?.inArrayOptThreshold !== undefined) {
+      LinkgressConfig.inArrayOptThreshold = queryOptions.inArrayOptThreshold;
     }
 
     this.initializeSchema(schema);

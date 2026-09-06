@@ -70,7 +70,7 @@ const users = await db.users
 - Logical: `and`, `or`, `not`
 - Pattern matching: `like`, `ilike`, `startsWith`
 - Regex: `regexMatches`, `regexMatchesCaseInsensitive`, `regexNoMatch`, `regexNoMatchCaseInsensitive`
-- Array: `inArray`, `notInArray`, `eqAny`, `neAll`
+- Array: `inArray`, `notInArray`, `eqAny`, `neAll`, `inArrayOpt`, `notInArrayOpt`
 - Null checking: `isNull`, `isNotNull`
 - JSONB: `jsonbSelect`, `jsonbSelectText`
 - Utility: `coalesce`
@@ -119,6 +119,44 @@ lists long enough that the parameter count is itself a cost — it is what makes
 such a query reusable as a prepared statement (see
 [`preparedStatements`](../database-clients.md)). Keep `inArray` for short lists
 in queries you have hand-tuned around the planner's exact estimate.
+
+#### Letting the list length decide: `inArrayOpt` / `notInArrayOpt`
+
+Under `preparedStatements` the choice is really about list length. PostgreSQL
+gives a short fixed-length `IN` text a cached generic plan after five
+executions, while `= ANY($1)` is re-planned on every call for arrays of up to
+about ten elements (its generic plan assumes ~10 elements, so the custom plan
+keeps winning) and only settles on a generic plan from roughly 30 elements on.
+Above that, every extra `IN` length is one more statement text and one more
+cached plan per pooled connection.
+
+`inArrayOpt` picks per call — `inArray` up to a threshold, `eqAny` above it —
+and `notInArrayOpt` does the same with `notInArray` / `neAll`:
+
+```typescript
+db.orderItems.where(oi => inArrayOpt(oi.productPriceId, priceIds));
+// priceIds.length <= threshold:  "oi"."product_price_id" IN ($1, $2, $3)
+// priceIds.length  > threshold:  "oi"."product_price_id" = ANY($1::integer[])
+```
+
+Results match `inArray` / `notInArray` for every list, the empty one included.
+The threshold defaults to `8` (`LinkgressConfig.DEFAULT_IN_ARRAY_OPT_THRESHOLD`)
+and is process-wide, because the operators are plain functions with no context
+in reach inside a `where(...)` lambda. It is set through the `LinkgressConfig`
+static class, the public surface for every library-wide setting:
+
+```typescript
+import { LinkgressConfig } from 'linkgress-orm';
+
+LinkgressConfig.inArrayOptThreshold = 12;                // property setter
+LinkgressConfig.configure({ inArrayOptThreshold: 12 });  // or several settings at once
+LinkgressConfig.inArrayOptThreshold;                     // -> 12
+new AppDatabase(client, { inArrayOptThreshold: 12 });    // QueryOptions writes the same value
+```
+
+`0` sends every non-empty list to the array form. Use `inArrayOpt` wherever the
+list comes from data; constant lists (enum members) stay under any sane
+threshold and keep their exact-length `IN` text and planner estimate.
 
 ### Ordering Results
 

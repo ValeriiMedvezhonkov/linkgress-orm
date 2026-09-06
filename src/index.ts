@@ -61,6 +61,10 @@ export {
 export { MockRowCache } from './query/mock-row-cache';
 export { NavigationPathCache } from './query/navigation-path-cache';
 
+// Process-wide settings (inArrayOpt threshold, …) — the public configuration surface
+export { LinkgressConfig } from './config/linkgress-config';
+export type { LinkgressSettings } from './config/linkgress-config';
+
 // Union query builder
 export {
   UnionQueryBuilder,
@@ -157,6 +161,8 @@ export {
   notInArray,
   eqAny,
   neAll,
+  inArrayOpt,
+  notInArrayOpt,
   isNull,
   isNotNull,
   between,
