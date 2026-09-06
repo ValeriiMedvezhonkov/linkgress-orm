@@ -104,6 +104,38 @@ describe('preparedStatements (PostgresClient)', () => {
     });
   });
 
+  test('the override is also available on an already-built query (query builder), for code that receives one', async () => {
+    await withFreshDb({ preparedStatements: true }, async (db) => {
+      await db.transaction(async (ctx) => {
+        // A paginated-grid helper gets a built query and cannot reach the table accessor.
+        const built = ctx.users.where(u => eq(u.id, 1)).orderBy(u => u.id).limit(5).offset(10);
+
+        await built.withPreparedStatements(false).toList();
+        await ctx.users.where(u => eq(u.id, 1)).select(u => ({ id: u.id })).withPreparedStatements(false).toList();
+
+        expect(await namedStatementCount(ctx)).toBe(0);
+
+        // The count leg of the same built query is covered by the same override.
+        await built.count();
+        expect(await namedStatementCount(ctx)).toBe(0);
+
+        await ctx.users.where(u => eq(u.id, 2)).toList(); // the context default still applies elsewhere
+        expect(await namedStatementCount(ctx)).toBe(1);
+      });
+    });
+  });
+
+  test('the query-builder override opts a built query IN on an unprepared context', async () => {
+    await withFreshDb({}, async (db) => {
+      await db.transaction(async (ctx) => {
+        await ctx.users.where(u => eq(u.id, 1)).withPreparedStatements(true).toList();
+        await ctx.users.where(u => eq(u.id, 2)).toList();
+
+        expect(await namedStatementCount(ctx)).toBe(1);
+      });
+    });
+  });
+
   test('a prepared read survives a result-shape change: the driver re-prepares once', async () => {
     const client = new PostgresClient(connection);
 

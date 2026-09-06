@@ -134,9 +134,9 @@ cached plan per pooled connection.
 and `notInArrayOpt` does the same with `notInArray` / `neAll`:
 
 ```typescript
-db.orderItems.where(oi => inArrayOpt(oi.productPriceId, priceIds));
-// priceIds.length <= threshold:  "oi"."product_price_id" IN ($1, $2, $3)
-// priceIds.length  > threshold:  "oi"."product_price_id" = ANY($1::integer[])
+db.widgets.where(w => inArrayOpt(w.slotId, slotIds));
+// slotIds.length <= threshold:  "w"."slot_id" IN ($1, $2, $3)
+// slotIds.length  > threshold:  "w"."slot_id" = ANY($1::integer[])
 ```
 
 Results match `inArray` / `notInArray` for every list, the empty one included.
@@ -157,6 +157,37 @@ new AppDatabase(client, { inArrayOptThreshold: 12 });    // QueryOptions writes 
 `0` sends every non-empty list to the array form. Use `inArrayOpt` wherever the
 list comes from data; constant lists (enum members) stay under any sane
 threshold and keep their exact-length `IN` text and planner estimate.
+
+#### Collapsing the short band too: `inArrayPadBuckets` (opt-in)
+
+The threshold only collapses lengths *above* it. Below it every list still gets
+one placeholder per element, so a family whose lists range over 1…8 elements
+leaves eight statement texts on each pooled connection. A bucket ladder rounds
+each list up to the next rung and fills the gap by repeating its last element:
+
+```typescript
+LinkgressConfig.inArrayPadBuckets = [1, 4, 8];   // off (null) by default
+
+db.widgets.where(w => inArrayOpt(w.slotId, [4, 8, 15]));
+// off:            "w"."slot_id" IN ($1, $2, $3)         params [4, 8, 15]
+// with [1, 4, 8]: "w"."slot_id" IN ($1, $2, $3, $4)     params [4, 8, 15, 15]
+```
+
+Repeating a value keeps the results identical — `x IN (a, b, b)` selects what
+`x IN (a, b)` does, and the same holds for `NOT IN`, so `notInArrayOpt` pads
+the same way. Padding with `NULL` would not: PostgreSQL recognises that a NULL
+element matches nothing, which changes the row estimate and, for `NOT IN`, the
+result.
+
+Pick the rungs knowing that a widened statement is planned for its rung rather
+than for the list that arrives. Measured on PostgreSQL 18, that is free from
+three elements up but costs about 32 % on single-element lists and 26 % on
+two-element ones — so keep the low rungs tight and collapse the rest. `[1, 2, 8]`
+pays nothing; `[1, 4, 8]` accepts the two-element case for the same text count.
+
+An empty list keeps its constant, since there is no element to repeat, and a
+list longer than the top rung is widened to the threshold — raising the
+threshold extends the ladder instead of dropping lengths out of it.
 
 ### Ordering Results
 

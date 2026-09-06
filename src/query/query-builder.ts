@@ -399,6 +399,28 @@ export class QueryBuilder<TSchema extends TableSchema, TRow = any> {
   }
 
   /**
+   * Run THIS query as a named server-side prepared statement (`true`) or as an unnamed
+   * statement (`false`), overriding the context's `preparedStatements` default — the
+   * query-builder counterpart of `DbEntityTable.withPreparedStatements`, for code that
+   * receives an already-built query (a paginated-grid helper, for instance).
+   *
+   * An unnamed statement leaves NO parse tree and NO plan in the connection's cache. That is
+   * the right choice for statements whose text varies with the request — paging offsets,
+   * sort columns, filter combinations — on paths that run a few times a minute: every
+   * distinct text of a prepared statement is a cached plan in every pooled connection.
+   *
+   * @example
+   * await db.orders.where(o => eq(o.status, status)).orderBy(o => o.createdAt).limit(25).offset(250)
+   *   .withPreparedStatements(false).toList();
+   */
+  withPreparedStatements(prepare: boolean): this {
+    this.executor = this.executor
+      ? this.executor.withPreparedStatements(prepare)
+      : new QueryExecutor(this.client, undefined, undefined, undefined, prepare);
+    return this;
+  }
+
+  /**
    * Get qualified table name with schema prefix if specified
    */
   private getQualifiedTableName(tableName: string, schema?: string): string {
@@ -1006,6 +1028,17 @@ export class SelectQueryBuilder<TSelection> {
     this.executor = this.executor
       ? this.executor.withExpectedExecutionTime(expectedMs)
       : new QueryExecutor(this.client, undefined, undefined, expectedMs);
+    return this;
+  }
+
+  /**
+   * Run THIS query as a named prepared statement (`true`) or unnamed (`false`), overriding
+   * the context's `preparedStatements` default. See `QueryBuilder.withPreparedStatements`.
+   */
+  withPreparedStatements(prepare: boolean): this {
+    this.executor = this.executor
+      ? this.executor.withPreparedStatements(prepare)
+      : new QueryExecutor(this.client, undefined, undefined, undefined, prepare);
     return this;
   }
 

@@ -1041,6 +1041,106 @@ export function getInArrayOptThreshold(): number {
 }
 
 /**
+ * A ladder a consumer may install to collapse the sub-threshold band further.
+ *
+ * Below the threshold `inArrayOpt` renders one placeholder per element, so a
+ * family whose lists range over 1…8 elements leaves eight statement texts — and
+ * eight cached plans — on every pooled connection. Rounding each list up to the
+ * next rung and repeating its last element to fill the gap turns that into one
+ * text per rung, without changing which rows come back: `x IN (a, b, b)` selects
+ * exactly what `x IN (a, b)` does, and so does the `NOT IN` form.
+ *
+ * Why these rungs, measured on PostgreSQL 18 with named prepared statements
+ * (2026-09-06): widening is free at every width except the two smallest. Sending
+ * a one-element list to a wider statement costs ~32 %, and a two-element list
+ * ~26 %, because the cached plan is then costed for a list several times longer
+ * than the one that arrives; from three elements up the same widening is free.
+ * A ladder therefore wants its lowest rungs tight and may collapse everything
+ * above — `[1, 4, 8]` keeps single-element lookups exact, accepts the cost on
+ * two-element ones, and folds 3…8 into two texts. `[1, 2, 8]` is the variant
+ * that pays nothing at all for the same number of texts.
+ */
+export const DEFAULT_IN_ARRAY_PAD_BUCKETS: readonly number[] = Object.freeze([1, 4, 8]);
+
+let inArrayPadBuckets: readonly number[] | null = null;
+
+/**
+ * INTERNAL write path behind `LinkgressConfig.inArrayPadBuckets`. `null` (the
+ * default) leaves every list at its own width.
+ *
+ * @internal
+ */
+export function setInArrayPadBuckets(buckets: readonly number[] | null | undefined): void {
+  if (buckets === null || buckets === undefined) {
+    inArrayPadBuckets = null;
+
+    return;
+  }
+
+  if (!Array.isArray(buckets) || buckets.length === 0) {
+    throw new Error('inArrayOpt pad buckets must be an array holding at least one rung, or null to disable padding');
+  }
+
+  for (const bucket of buckets) {
+    if (!Number.isInteger(bucket) || bucket < 1) {
+      throw new Error(`inArrayOpt pad buckets must each be a positive integer, got ${String(bucket)}`);
+    }
+  }
+
+  for (let i = 1; i < buckets.length; i++) {
+    if (buckets[i] <= buckets[i - 1]) {
+      throw new Error(`inArrayOpt pad buckets must be in strictly ascending order, got [${buckets.join(', ')}]`);
+    }
+  }
+
+  inArrayPadBuckets = Object.freeze([...buckets]);
+}
+
+/**
+ * INTERNAL read path behind `LinkgressConfig.inArrayPadBuckets`.
+ *
+ * @internal
+ */
+export function getInArrayPadBuckets(): readonly number[] | null {
+  return inArrayPadBuckets;
+}
+
+/**
+ * Widen `values` to the next configured rung, filling with its last element.
+ *
+ * Returns the list unchanged when no ladder is installed, when the list is
+ * empty (there is no element to repeat, and the empty list already renders as a
+ * constant), or when its length is already a rung. A list longer than the top
+ * rung takes the threshold as the implied final rung, so raising the threshold
+ * widens the ladder instead of dropping lengths out of it — every list that
+ * reaches the `IN` branch lands on a bucket.
+ */
+function padToInArrayBucket<V>(values: readonly V[]): readonly V[] {
+  const buckets = inArrayPadBuckets;
+
+  // `inArrayOpt` forwards a non-array straight through so `inArray` can degrade
+  // it to its constant; the ladder must not be the thing that throws on it.
+  if (buckets === null || !Array.isArray(values) || values.length === 0) {
+    return values;
+  }
+
+  const width = buckets.find(bucket => bucket >= values.length) ?? inArrayOptThreshold;
+
+  if (width <= values.length) {
+    return values;
+  }
+
+  const last = values[values.length - 1];
+  const padded = values.slice() as V[];
+
+  while (padded.length < width) {
+    padded.push(last);
+  }
+
+  return padded;
+}
+
+/**
  * List membership that picks the rendering by list length: {@link inArray}'s
  * `IN ($1, $2, …)` for lists up to the configured threshold, {@link eqAny}'s
  * `= ANY($1::type[])` above it. Same results as `inArray` for every list,
@@ -1063,7 +1163,7 @@ export function inArrayOpt<T extends string, V>(
   values: readonly V[]
 ): Condition {
   if (!Array.isArray(values) || values.length <= inArrayOptThreshold) {
-    return inArray(column as FieldLike<V> | T | undefined, values as V[]);
+    return inArray(column as FieldLike<V> | T | undefined, padToInArrayBucket(values) as V[]);
   }
 
   return eqAny(column as FieldLike<V> | DbColumn<V> | undefined, values);
@@ -1080,7 +1180,7 @@ export function notInArrayOpt<T extends string, V>(
   values: readonly V[]
 ): Condition {
   if (!Array.isArray(values) || values.length <= inArrayOptThreshold) {
-    return notInArray(column as FieldLike<V> | T | undefined, values as V[]);
+    return notInArray(column as FieldLike<V> | T | undefined, padToInArrayBucket(values) as V[]);
   }
 
   return neAll(column as FieldLike<V> | DbColumn<V> | undefined, values);

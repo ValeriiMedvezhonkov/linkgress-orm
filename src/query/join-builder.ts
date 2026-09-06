@@ -89,6 +89,18 @@ export class JoinQueryBuilder<TLeft, TRight> {
   }
 
   /**
+   * Run THIS join query as a named prepared statement (`true`) or unnamed (`false`),
+   * overriding the context's `preparedStatements` default. See
+   * `QueryBuilder.withPreparedStatements`.
+   */
+  withPreparedStatements(prepare: boolean): this {
+    this.executor = this.executor
+      ? this.executor.withPreparedStatements(prepare)
+      : new QueryExecutor(this.client, undefined, undefined, undefined, prepare);
+    return this;
+  }
+
+  /**
    * Add another left join
    */
   leftJoin<TThird>(

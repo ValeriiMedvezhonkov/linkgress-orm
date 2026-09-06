@@ -195,6 +195,14 @@ export interface QueryOptions {
    * directly is the same thing without a context.
    */
   inArrayOptThreshold?: number;
+  /**
+   * OPT-IN widths `inArrayOpt` / `notInArrayOpt` may render below the threshold: each list is
+   * rounded up to the next rung and the gap filled by repeating its last element, so a band of
+   * lengths shares one statement text instead of one each. Same rows either way. Omitted or
+   * `null` keeps one placeholder per element. PROCESS-WIDE for the same reason as
+   * `inArrayOptThreshold` — see `LinkgressConfig.inArrayPadBuckets` for the rung trade-off.
+   */
+  inArrayPadBuckets?: readonly number[] | null;
   /** Collection aggregation strategy (default: 'lateral') */
   collectionStrategy?: CollectionStrategyType;
   /**
@@ -1779,9 +1787,13 @@ export class DataContext<TSchema extends ContextSchema = any> {
       this.executor = new QueryExecutor(client, queryOptions);
     }
 
-    // inArrayOpt/notInArrayOpt are context-free functions; the option configures them process-wide.
+    // inArrayOpt/notInArrayOpt are context-free functions; the options configure them process-wide.
     if (queryOptions?.inArrayOptThreshold !== undefined) {
       LinkgressConfig.inArrayOptThreshold = queryOptions.inArrayOptThreshold;
+    }
+
+    if (queryOptions?.inArrayPadBuckets !== undefined) {
+      LinkgressConfig.inArrayPadBuckets = queryOptions.inArrayPadBuckets;
     }
 
     this.initializeSchema(schema);
@@ -2294,6 +2306,14 @@ export interface IEntityQueryable<TEntity extends DbEntity> {
   withTimeout(timeoutMs: number): IEntityQueryable<TEntity>;
 
   /**
+   * Run this query as a named prepared statement (`true`) or unnamed (`false`), overriding
+   * the context's `preparedStatements` default — available at any point of the chain, so
+   * code that receives a built query (a paginated-grid helper) can opt it out. See
+   * `QueryOptions.preparedStatements`.
+   */
+  withPreparedStatements(prepare: boolean): IEntityQueryable<TEntity>;
+
+  /**
    * Mark this query as expected to finish within `expectedMs` (ms). If it runs
    * longer, the context's `onQueryTakingTooLong` callback fires (the query is
    * NOT cancelled). Overrides the context's `longRunningQueryThreshold`.
@@ -2509,6 +2529,12 @@ export interface EntitySelectQueryBuilder<TEntity extends DbEntity, TSelection> 
    * to disable. On timeout a `QueryTimeoutError` is thrown.
    */
   withTimeout(timeoutMs: number): EntitySelectQueryBuilder<TEntity, TSelection>;
+
+  /**
+   * Run this query as a named prepared statement (`true`) or unnamed (`false`), overriding
+   * the context's `preparedStatements` default. See `QueryOptions.preparedStatements`.
+   */
+  withPreparedStatements(prepare: boolean): EntitySelectQueryBuilder<TEntity, TSelection>;
 
   /**
    * Mark this query as expected to finish within `expectedMs` (ms). If it runs
