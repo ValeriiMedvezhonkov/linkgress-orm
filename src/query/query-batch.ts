@@ -87,6 +87,24 @@ import { renumberPlaceholders } from './sql-utils';
 export class QueryBatch {
   private readonly entries: BatchEntry[] = [];
   private results: Map<string, { kind: BatchKind; value: any }> | null = null;
+  private prepare?: boolean;
+
+  /**
+   * Run the batch's single statement as a NAMED prepared statement (`true`) or as an
+   * unnamed one (`false`), whatever the context's `preparedStatements` option says.
+   *
+   * A batch statement is one text per SET of registered queries, so a batch whose
+   * branches all bind array parameters (`= ANY($n::type[])`) tends to be re-planned on
+   * every call by PostgreSQL anyway (the generic plan cannot see the array sizes);
+   * naming it then only keeps an unused generic plan and the rewritten query tree
+   * in every pooled connection. Opting such a batch out costs one describe round
+   * trip and no planning, because the planning was already happening.
+   */
+  withPreparedStatements(prepare: boolean): this {
+    this.prepare = prepare;
+
+    return this;
+  }
 
   /**
    * Register a query whose full result list is wanted.
@@ -166,7 +184,8 @@ export class QueryBatch {
     });
 
     const sql = branches.join('\nUNION ALL\n');
-    const result = executor ? await executor.query(sql, params) : await client.query(sql, params);
+    const execution = this.prepare === undefined ? undefined : { prepare: this.prepare };
+    const result = executor ? await executor.query(sql, params, execution) : await client.query(sql, params, execution);
 
     const itemsByIx = new Map<number, any[]>();
 

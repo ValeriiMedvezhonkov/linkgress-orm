@@ -230,12 +230,33 @@ await db.products.withPreparedStatements(false).where(p => eq(p.active, true)).t
 await db.tokens.withPreparedStatements(true).where(t => eq(t.id, id)).firstOrDefault();  // hot lookup on an unprepared context
 ```
 
+The same override is available on an **already-built** query — `QueryBuilder`,
+`SelectQueryBuilder` and `JoinQueryBuilder`, at any point of the chain — so a helper that is
+handed a query can opt it out without owning the context:
+
+```typescript
+// A paginated grid: the text changes with every request (offset, sort, filters),
+// so preparing it would leave a cached plan per variant in every pooled connection.
+await modelQuery.orderBy(o => o.createdAt).limit(25).offset(250)
+  .withPreparedStatements(false)
+  .toList();
+
+await modelQuery.withPreparedStatements(false).count();
+```
+
+The override covers every execution of that builder (`toList`, `count`, `countOver`,
+`firstOrDefault`, …) and survives `.withTimeout()` / `.expectedExecutionTime()` chaining.
+
 Measure before enabling: after five executions PostgreSQL may switch to a generic plan, which
 suits uniform-selectivity OLTP statements and can slow down wide analytical ones. Statements
-whose text varies per call (`IN` lists of varying length, VALUES lists) are cached per variant;
-the bulk-insert legs (`insertWithChildren`, `insertBulkWithChildren`, `MutationBatch`) stay
-unnamed regardless of the option. Only `PostgresClient` honors it, and only when the postgres.js
-instance was not created with `prepare: false`.
+whose text varies per call (`IN` lists of varying length, VALUES lists) are cached per variant —
+[`inArrayOpt` / `inArrayPadBuckets`](./guides/querying.md#matching-a-list-of-values) bound that
+variety; the bulk-insert legs (`insertWithChildren`, `insertBulkWithChildren`, `MutationBatch`)
+stay unnamed regardless of the option. Only `PostgresClient` honors it, and only when the
+postgres.js instance was not created with `prepare: false`.
+
+Full option reference, including what to read on the server before and after enabling it:
+[Configuration & Options](./guides/configuration.md#server-side-prepared-statements-opt-in).
 
 ## Internal Changes
 
@@ -262,7 +283,9 @@ Both clients offer good performance, but have different characteristics:
 ### PostgresClient (`postgres`)
 - Newer, optimized implementation
 - Smaller bundle size (~7KB vs ~20KB)
-- Automatic prepared statements
+- The only client that can run statements as named server-side prepared statements
+  ([`preparedStatements`](#prepared-statements-postgresclient), opt-in)
+- True single-round-trip multi-statement support (`querySimple`)
 - Better streaming support
 - Modern async/await first API
 

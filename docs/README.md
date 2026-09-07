@@ -63,6 +63,14 @@ Complete documentation for Linkgress ORM - A type-safe ORM for PostgreSQL and Ty
   - Upsert (INSERT ... ON CONFLICT)
   - Type safety and performance tips
 
+- **[Configuration & Options](./guides/configuration.md)** - Every option, and when to turn it on
+  - Context options (`QueryOptions`) with defaults
+  - Logging in production (`logFailedQueries`) and slow-query detection
+  - Server-side prepared statements (`preparedStatements`, `.withPreparedStatements()`)
+  - Statement-text economy (`inArrayOptThreshold`, `inArrayPadBuckets`)
+  - Per-query overrides (`.withQueryOptions()`, `.withTimeout()`, `.expectedExecutionTime()`)
+  - Process-wide settings (`LinkgressConfig`) and opt-in query-build caches
+
 ### 🚀 Advanced Topics
 
 - **[Collection Strategies](./collection-strategies.md)** - Collection loading and performance
@@ -90,6 +98,12 @@ Complete documentation for Linkgress ORM - A type-safe ORM for PostgreSQL and Ty
 3. Set up [Migrations](./guides/migrations.md) in your workflow
 4. Read [Querying](./guides/querying.md) to master queries
 5. Explore [Collection Strategies](./collection-strategies.md)
+
+### Tuning an Existing App
+1. [Configuration & Options](./guides/configuration.md) - the complete list of switches and their defaults
+2. [Prepared statements](./guides/configuration.md#server-side-prepared-statements-opt-in) - `preparedStatements` and per-query `.withPreparedStatements()`
+3. [Matching a list of values](./guides/querying.md#matching-a-list-of-values) - `inArrayOpt`, `eqAny`, and bounding statement-text variety
+4. [Collection Strategies](./collection-strategies.md) - pick the right aggregation strategy
 
 ## Contributing to Documentation
 

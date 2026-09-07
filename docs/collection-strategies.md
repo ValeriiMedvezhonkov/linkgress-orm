@@ -513,20 +513,45 @@ See [examples/temp-table-strategy-demo.ts](examples/temp-table-strategy-demo.ts)
 
 ### QueryOptions
 
+The options most relevant to collections. See
+**[Configuration & Options](./guides/configuration.md#context-options--queryoptions)** for the
+complete list with defaults — logging, prepared statements, slow-query detection, mappers and
+process-wide settings.
+
 ```typescript
 interface QueryOptions {
+  /** Collection aggregation strategy (default: 'lateral') */
+  collectionStrategy?: 'cte' | 'lateral' | 'temptable';
+
   /** Enable SQL query logging */
   logQueries?: boolean;
-  /** Custom logger function (defaults to console.log) */
-  logger?: (message: string) => void;
+  /** Custom logger function (defaults to defaultLogger); second arg is the log section */
+  logger?: (message: string, section?: LogSection) => void;
   /** Log query execution time */
   logExecutionTime?: boolean;
   /** Log query parameters */
   logParameters?: boolean;
   /** Report failed statements (with their SQL) even when logQueries is off (default: logQueries) */
   logFailedQueries?: boolean;
-  /** Collection aggregation strategy (default: 'lateral') */
-  collectionStrategy?: 'cte' | 'lateral' | 'temptable';
+  /** Log a per-phase breakdown: build / execute / transform */
+  traceTime?: boolean;
+
+  /** Opt-in: run parameterised statements as NAMED prepared statements (PostgresClient only) */
+  preparedStatements?: boolean;
+
+  /** Slow-query detection (the query is reported, not cancelled) */
+  onQueryTakingTooLong?: (info: SlowQueryInfo) => void;
+  longRunningQueryThreshold?: number;   // default 10000 ms
+  slowQueryStackTraceLimit?: number;    // default 50 frames; 0 = no capture
+
+  /** Result handling */
+  disableMappers?: boolean;   // skip fromDriver/toDriver
+  rawResult?: boolean;        // driver rows, no ORM shaping
+  useBinaryProtocol?: boolean;
+
+  /** Process-wide when passed here — see LinkgressConfig */
+  inArrayOptThreshold?: number;                  // default 8
+  inArrayPadBuckets?: readonly number[] | null;  // default null (off)
 }
 ```
 
