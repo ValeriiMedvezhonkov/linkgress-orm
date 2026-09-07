@@ -976,6 +976,13 @@ Prepared statements allow you to build a query once and execute it multiple time
 - **Type-safe placeholders** - Named parameters with validation
 - **Developer ergonomics** - Cleaner API for reusable queries
 
+> **This is the client-side form.** `.prepare('name')` + `sql.placeholder()` builds the SQL once
+> in your process. Whether that statement is then sent to PostgreSQL as a NAMED server-side
+> prepared statement (so the server keeps its parse tree and plan) is a separate, opt-in setting:
+> `preparedStatements` on the context, `.withPreparedStatements(true | false)` per query — see
+> [Configuration & Options](./configuration.md#server-side-prepared-statements-opt-in). The two
+> are independent and work together.
+
 ### Basic Usage
 
 Create a prepared query using `sql.placeholder()` and `.prepare()`:
@@ -1227,6 +1234,39 @@ const users = await db.users
   .toList();
 ```
 
+### Tune Execution Per Query
+
+Any query — including one a helper receives already built — can override the context's execution
+policy at any point of the chain:
+
+```typescript
+// Server-side prepared statements: off for this one (variable text), on for a hot lookup
+await grid.orderBy(o => o.createdAt).limit(25).offset(250).withPreparedStatements(false).toList();
+await db.tokens.withPreparedStatements(true).where(t => eq(t.value, token)).firstOrDefault();
+
+// Cancel after 5s (throws QueryTimeoutError); 0 disables the connection default
+await db.reports.withTimeout(5000).toList();
+
+// Not a cancellation: just a budget for the onQueryTakingTooLong callback
+await db.reports.expectedExecutionTime(30000).toList();
+
+// Any QueryOptions for this chain only
+await db.users.withQueryOptions({ collectionStrategy: 'temptable' }).select(/* … */).toList();
+```
+
+`.withPreparedStatements()` is available on the table, on `QueryBuilder` / `SelectQueryBuilder`,
+and on `JoinQueryBuilder`; on a grouped chain, set it before `.groupBy()`. It covers every
+execution of that builder (`toList`, `count`, `countOver`, `firstOrDefault`, …).
+
+See [Configuration & Options](./configuration.md) for defaults and trade-offs.
+
+### Keep Statement Text Stable
+
+Under `preparedStatements`, every distinct statement text is another cached plan in every pooled
+connection. `inArrayOpt` / `notInArrayOpt` bound how many texts a list lookup produces, and
+`LinkgressConfig.inArrayPadBuckets` collapses the short band on top of that — see
+[Matching a List of Values](#matching-a-list-of-values).
+
 ### Use EXPLAIN ANALYZE
 
 Profile your queries:
@@ -1378,12 +1418,13 @@ async function getDashboardStats(userId: number) {
 
 ## See Also
 
-- [Data Modification](./data-modification.md) - Insert, update, and delete operations
+- [Insert/Update/Upsert/BULK](./insert-update-guide.md) - Insert, update, and delete operations
+- [Configuration & Options](./configuration.md) - Prepared statements, timeouts, logging, and every other switch
 - [Collection Strategies](../collection-strategies.md) - Optimize collection loading
 - [Subquery Guide](./subquery-guide.md) - Advanced subquery patterns
-- [CTE Guide](./CTE-GUIDE.md) - Common Table Expressions
+- [CTE Guide](./cte-guide.md) - Common Table Expressions
 - [Schema Configuration](./schema-configuration.md) - Define entities and relationships
-- [Prepared Statements](#prepared-statements) - Reusable parameterized queries
+- [Prepared Statements](#prepared-statements) - Reusable parameterized queries (`sql.placeholder()`)
 
 ## License
 

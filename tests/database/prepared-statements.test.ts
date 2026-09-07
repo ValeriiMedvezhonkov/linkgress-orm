@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { DbColumn, DbContext, DbEntity, DbEntityTable, DbModelConfig, eq, integer, PostgresClient, QueryTimeoutError, varchar } from '../../src';
 import type { QueryOptions } from '../../src';
 import { MutationBatch } from '../../src/query/mutation-batch';
+import { QueryBatch } from '../../src/query/query-batch';
 import { AppDatabase } from '../../debug/schema/appDatabase';
 
 /**
@@ -130,6 +131,44 @@ describe('preparedStatements (PostgresClient)', () => {
       await db.transaction(async (ctx) => {
         await ctx.users.where(u => eq(u.id, 1)).withPreparedStatements(true).toList();
         await ctx.users.where(u => eq(u.id, 2)).toList();
+
+        expect(await namedStatementCount(ctx)).toBe(1);
+      });
+    });
+  });
+
+  test('a QueryBatch can opt its single statement out of preparation on a prepared context', async () => {
+    await withFreshDb({ preparedStatements: true }, async (db) => {
+      await db.transaction(async (ctx) => {
+        const unnamed = new QueryBatch().withPreparedStatements(false);
+        const oneKey = unnamed.addList(ctx.users.where(u => eq(u.id, 1)).select(u => ({ id: u.id })), 'one');
+        const countKey = unnamed.addCount(ctx.users.where(u => eq(u.isActive, true)), 'active');
+
+        await unnamed.executeBatch();
+
+        expect(await namedStatementCount(ctx)).toBe(0);
+
+        // Same results as the standalone (named) executions of the same queries.
+        expect(unnamed.getList(oneKey)).toEqual(await ctx.users.where(u => eq(u.id, 1)).select(u => ({ id: u.id })).toList());
+        expect(unnamed.getCount(countKey)).toBe(await ctx.users.where(u => eq(u.isActive, true)).count());
+        expect(await namedStatementCount(ctx)).toBe(2);
+
+        // Without the override the batch follows the context: named.
+        const named = new QueryBatch();
+        named.addList(ctx.users.where(u => eq(u.id, 2)).select(u => ({ id: u.id })), 'two');
+        await named.executeBatch();
+
+        expect(await namedStatementCount(ctx)).toBe(3);
+      });
+    });
+  });
+
+  test('a QueryBatch can opt IN on an unprepared context', async () => {
+    await withFreshDb({}, async (db) => {
+      await db.transaction(async (ctx) => {
+        const batch = new QueryBatch().withPreparedStatements(true);
+        batch.addList(ctx.users.where(u => eq(u.id, 1)).select(u => ({ id: u.id })), 'one');
+        await batch.executeBatch();
 
         expect(await namedStatementCount(ctx)).toBe(1);
       });

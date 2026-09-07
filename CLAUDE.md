@@ -4,6 +4,7 @@
 
 ```
 src/
+  config/            # LinkgressConfig — the public process-wide settings surface
   database/          # Database client implementations (PgClient, PostgresClient, BunClient)
   entity/            # Entity system: DbContext, entity builders, model config
   query/             # Query builder system (core of the ORM)
@@ -18,6 +19,25 @@ docs/                # Documentation
   guides/            # User guides
 changelog/           # Versioned changelog files (v0.3.0.md, v0.4.0.md, etc.)
 ```
+
+## Configuration Surface
+
+Three scopes, documented for users in `docs/guides/configuration.md` (keep it in sync when adding
+an option):
+
+- **Context** — `QueryOptions` in `src/entity/db-context.ts`: logging (`logQueries`,
+  `logFailedQueries`, `logger`/`LogSection`), `preparedStatements`, `collectionStrategy`,
+  slow-query detection (`onQueryTakingTooLong`, `longRunningQueryThreshold`,
+  `slowQueryStackTraceLimit`), `disableMappers`, `rawResult`, `traceTime`, `useBinaryProtocol`
+- **Per query** — `.withQueryOptions()` (tables), `.withPreparedStatements()` (tables,
+  `QueryBuilder`, `SelectQueryBuilder`, `JoinQueryBuilder`), `.withTimeout()`,
+  `.expectedExecutionTime()`. Precedence in `QueryExecutor.buildExecutionOptions()`:
+  per-call → builder override → context option
+- **Process-wide** — `LinkgressConfig` (`src/config/linkgress-config.ts`) is the ONLY exported
+  way to set `inArrayOptThreshold` / `inArrayPadBuckets`; the underlying setters live next to
+  the operators in `src/query/conditions.ts` and are not exported from the package.
+  `QueryOptions` keys of the same name write the same process-wide values at context construction
+- **Opt-in query-build caches** — `MockRowCache.setEnabled(true)` also gates `NavigationPathCache`
 
 ## Conventions
 

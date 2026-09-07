@@ -189,6 +189,7 @@ const db = new AppDatabase(client, {
   logQueries: true,  // Optional: log SQL queries
   logParameters: true,  // Optional: log query parameters
   logFailedQueries: true,  // Optional: report failed statements even when logQueries is off
+  // preparedStatements: true,  // Optional (PostgresClient): named server-side prepared statements
 });
 
 // Create database schema
@@ -322,7 +323,29 @@ const usersWithAge = await db.users
   .toList();
 ```
 
-**Available Operators:** `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `and`, `or`, `not`, `like`, `ilike`, `inArray`, `notInArray`, `eqAny`, `neAll`, `isNull`, `isNotNull`, `coalesce`, `jsonbSelect`, `jsonbSelectText`, `flagHas`, `flagHasAll`, `flagHasAny`, `flagHasNone`
+**Available Operators:** `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `and`, `or`, `not`, `like`, `ilike`, `inArray`, `notInArray`, `eqAny`, `neAll`, `inArrayOpt`, `notInArrayOpt`, `isNull`, `isNotNull`, `coalesce`, `jsonbSelect`, `jsonbSelectText`, `flagHas`, `flagHasAll`, `flagHasAny`, `flagHasNone`
+
+For list membership, prefer `inArrayOpt` / `notInArrayOpt` whenever the list comes from data:
+they render a plain `IN (…)` for short lists and bind one array parameter above a configurable
+threshold, which keeps the statement text stable. See
+[Matching a list of values](./guides/querying.md#matching-a-list-of-values).
+
+### 5. Optional Features
+
+Everything below is off by default and can be turned on per context, per query, or process-wide:
+
+| Feature | Turn it on with |
+|---|---|
+| Failed-statement logging without the per-statement firehose | `logFailedQueries: true` |
+| Slow-query reports with the calling stack | `onQueryTakingTooLong` + `longRunningQueryThreshold` |
+| Server-side prepared statements (PostgresClient) | `preparedStatements: true`, or `.withPreparedStatements(true \| false)` per query |
+| Per-query timeout / expected duration | `.withTimeout(ms)` / `.expectedExecutionTime(ms)` |
+| Stable statement text for list lookups | `inArrayOpt` + `LinkgressConfig.inArrayOptThreshold` / `inArrayPadBuckets` |
+| Collection aggregation strategy | `collectionStrategy: 'lateral' \| 'cte' \| 'temptable'` |
+| Query-build caching on hot paths | `MockRowCache.setEnabled(true)` |
+
+See **[Configuration & Options](./guides/configuration.md)** for defaults, trade-offs, and what
+to measure before enabling each one.
 
 ## Next Steps
 
@@ -330,6 +353,7 @@ const usersWithAge = await db.users
 - **[Migrations](./guides/migrations.md)** - Database migrations, schema management, and workflow integration
 - **[Querying](./guides/querying.md)** - Master type-safe queries, joins, aggregations, and advanced patterns
 - **[Insert/Update/Upsert/BULK](./guides/insert-update-guide.md)** - Master insert, update, delete, and bulk operations
+- **[Configuration & Options](./guides/configuration.md)** - Logging, prepared statements, timeouts, and every other switch
 - **[Collection Strategies](./collection-strategies.md)** - Understand CTE, LATERAL, and temp table strategies for loading collections
 - **[Subqueries](./guides/subquery-guide.md)** - Using subqueries in your queries
 
