@@ -119,3 +119,24 @@ export function getQualifiedFieldName(fieldRef: any): string {
 export function getTableAlias(fieldRef: any): string | undefined {
   return fieldRef.__tableAlias;
 }
+
+/**
+ * Cached `"__collection_<table>__"` marker matchers. Collection mock items stamp their column
+ * refs with this marker alias (see `CollectionQueryBuilder.createMockItem`) and every strategy
+ * rewrites it back to the real inner alias while building SQL — for every field expression,
+ * WHERE and ORDER BY of every collection, on every build. Constructing the RegExp per call was
+ * measurable on wide projections; the pattern is a pure function of the table name, so it is
+ * built once. `withDot` selects the `"marker".` form (lateral strategy: only qualified column
+ * references) versus the bare `"marker"` form (CTE / temp-table strategies and filter joins).
+ */
+const collectionMarkerPatterns = new Map<string, RegExp>();
+
+export function collectionMarkerPattern(targetTable: string, withDot: boolean): RegExp {
+  const key = withDot ? `${targetTable}.` : targetTable;
+  let pattern = collectionMarkerPatterns.get(key);
+  if (!pattern) {
+    pattern = new RegExp(`"__collection_${targetTable}__"${withDot ? '\\.' : ''}`, 'g');
+    collectionMarkerPatterns.set(key, pattern);
+  }
+  return pattern;
+}

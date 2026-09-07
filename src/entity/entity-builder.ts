@@ -512,7 +512,27 @@ export class EntityConfigBuilder<TEntity extends DbEntity> {
       indexMetadata.operatorClass = 'gin_trgm_ops';
     }
 
-    metadata.indexes.push(indexMetadata);
+    // De-duplicate by name: the entity model can be built more than once per process (a host
+
+    // that constructs an app context AND a migration context registers every index twice, and
+
+    // the schema reconcile then plans each new index twice — harmless with IF NOT EXISTS, but
+
+    // noisy). The metadata store is class-static, so a repeated registration REPLACES the
+
+    // earlier entry instead of appending a duplicate; the latest definition wins.
+
+    const existingIndexPosition = metadata.indexes.findIndex(index => index.name === indexName);
+
+    if (existingIndexPosition >= 0) {
+
+      metadata.indexes[existingIndexPosition] = indexMetadata;
+
+    } else {
+
+      metadata.indexes.push(indexMetadata);
+
+    }
 
     return new IndexBuilder<TEntity>(this.entityClass, indexMetadata);
   }

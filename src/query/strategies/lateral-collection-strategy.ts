@@ -1,4 +1,5 @@
 import { DatabaseClient } from '../../database/database-client.interface';
+import { collectionMarkerPattern } from '../query-utils';
 import {
   ICollectionStrategy,
   CollectionStrategyType,
@@ -204,7 +205,10 @@ export class LateralCollectionStrategy implements ICollectionStrategy {
     // Helper to rewrite expressions that reference the collection's table to use inner alias
     const rewriteTableReference = (expression: string): string => {
       // Replace the special marker alias `"__collection_tableName__".` with `"innerTableAlias".`
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"\\.`, 'g');
+      if (!expression.includes('"__collection_')) {
+        return expression;  // nothing to rewrite — skip the regex pass entirely
+      }
+      const markerPattern = collectionMarkerPattern(targetTable, true);
       return expression.replace(markerPattern, `"${innerTableAlias}".`);
     };
 
@@ -473,7 +477,10 @@ WHERE ${whereSQL})`;
       // Replace the special marker alias `"__collection_tableName__".` with `"innerTableAlias".`
       // This marker is set in CollectionQueryBuilder.createMockItem() to distinguish
       // collection references from outer table references when both target the same table
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"\\.`, 'g');
+      if (!expression.includes('"__collection_')) {
+        return expression;  // nothing to rewrite — skip the regex pass entirely
+      }
+      const markerPattern = collectionMarkerPattern(targetTable, true);
       return expression.replace(markerPattern, `"${innerTableAlias}".`);
     };
 
@@ -613,7 +620,10 @@ FROM (
     // Helper to rewrite expressions that reference the collection's table to use inner alias
     const rewriteTableReference = (expression: string): string => {
       // Replace the special marker alias `"__collection_tableName__".` with `"innerTableAlias".`
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"\\.`, 'g');
+      if (!expression.includes('"__collection_')) {
+        return expression;  // nothing to rewrite — skip the regex pass entirely
+      }
+      const markerPattern = collectionMarkerPattern(targetTable, true);
       return expression.replace(markerPattern, `"${innerTableAlias}".`);
     };
 
@@ -701,7 +711,10 @@ FROM (
     // Helper to rewrite expressions that reference the collection's table to use inner alias
     const rewriteTableReference = (expression: string): string => {
       // Replace the special marker alias `"__collection_tableName__".` with `"innerTableAlias".`
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"\\.`, 'g');
+      if (!expression.includes('"__collection_')) {
+        return expression;  // nothing to rewrite — skip the regex pass entirely
+      }
+      const markerPattern = collectionMarkerPattern(targetTable, true);
       return expression.replace(markerPattern, `"${innerTableAlias}".`);
     };
 
@@ -785,7 +798,10 @@ FROM (
     // Helper to rewrite expressions that reference the collection's table to use inner alias
     const rewriteTableReference = (expression: string): string => {
       // Replace the special marker alias `"__collection_tableName__".` with `"innerTableAlias".`
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"\\.`, 'g');
+      if (!expression.includes('"__collection_')) {
+        return expression;  // nothing to rewrite — skip the regex pass entirely
+      }
+      const markerPattern = collectionMarkerPattern(targetTable, true);
       return expression.replace(markerPattern, `"${innerTableAlias}".`);
     };
 

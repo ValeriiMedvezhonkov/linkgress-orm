@@ -1,4 +1,5 @@
 import { Condition, ConditionBuilder, SqlFragment, SqlBuildContext, FieldRef, UnwrapSelection, and as andCondition, Placeholder } from './conditions';
+import { collectionMarkerPattern } from './query-utils';
 import { PreparedQuery } from './prepared-query';
 import { TableSchema } from '../schema/table-builder';
 import type { CollectionStrategyType, OrderDirection, OrderByResult, FluentDelete, FluentQueryUpdate } from '../entity/db-context';
@@ -8075,7 +8076,7 @@ export class CollectionQueryBuilder<TItem = any> {
       }
 
       // Rewrite collection marker aliases to actual table names
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"`, 'g');
+      const markerPattern = collectionMarkerPattern(targetTable, false);
       const rewrittenCondSql = condSql.replace(markerPattern, `"${targetTable}"`);
 
       whereSQL += ` AND ${rewrittenCondSql}`;
