@@ -41,6 +41,74 @@ import {
 const entityMappingPlanCache = new WeakMap<object, Array<{ propName: string; dbColumnName: string; mapper?: any }>>();
 
 /**
+ * Per-schema prototype carrying a select-all row's NAVIGATION getters.
+ *
+ * A select-all row (`table.where(...)`, `table.with(...)`, a filter-join taken straight off the
+ * table) exposes every COLUMN as an own enumerable property — the selection walkers downstream
+ * read those with `Object.keys` / `Object.entries` — plus every NAVIGATION as a non-enumerable
+ * getter, so a chained `.select(u => ({ posts: u.posts!.where(...) }))` still resolves while the
+ * default projection stays columns-only.
+ *
+ * The navigation getters are a pure function of the schema, so they are built ONCE per schema
+ * onto a shared prototype instead of being redefined on every row: an entity with 47 navigation
+ * properties paid 47 `Object.defineProperty` calls on EVERY query build — ~5 µs, more than half
+ * the cost of the whole select-all wrapper on a wide table. Rows keep their own enumerable
+ * columns; only the non-enumerable getters move, and non-enumerable properties never appear in
+ * `Object.keys` / `Object.entries` / spread / `for...in`, so every enumeration downstream sees
+ * exactly what it saw before. `row.constructor` still resolves to `Object` through the chain,
+ * which is what `isPlainObject` in the query builder tests.
+ *
+ * WeakMap-keyed on the schema object, so a prototype is dropped with its schema.
+ */
+const selectAllRelationPrototypes = new WeakMap<object, object>();
+
+/** Non-enumerable slot holding the mock row a select-all row's navigation getters read through. */
+const SELECT_ALL_SOURCE = Symbol('linkgress.selectAllSource');
+
+function getSelectAllRelationPrototype(schema: any): object {
+  let prototype = selectAllRelationPrototypes.get(schema);
+
+  if (prototype === undefined) {
+    const descriptors: PropertyDescriptorMap = {};
+
+    for (const relName of Object.keys(schema.relations)) {
+      descriptors[relName] = {
+        get(this: any) {
+          return this[SELECT_ALL_SOURCE][relName];
+        },
+        enumerable: false,
+        configurable: true,
+      };
+    }
+
+    prototype = Object.defineProperties({}, descriptors);
+    selectAllRelationPrototypes.set(schema, prototype);
+  }
+
+  return prototype;
+}
+
+/**
+ * A select-all row over `schema` reading through the mock row `source` — see
+ * {@link getSelectAllRelationPrototype} for the shape and why navigations are inherited.
+ */
+function createSelectAllRow(schema: any, source: any): any {
+  const result: any = Object.create(getSelectAllRelationPrototype(schema));
+
+  Object.defineProperty(result, SELECT_ALL_SOURCE, {
+    value: source,
+    enumerable: false,
+    configurable: true,
+  });
+
+  for (const colName of Object.keys(schema.columns)) {
+    result[colName] = source[colName];
+  }
+
+  return result;
+}
+
+/**
  * Collection aggregation strategy type
  */
 export type CollectionStrategyType = 'cte' | 'temptable' | 'lateral';
@@ -3470,25 +3538,10 @@ export class DbEntityTable<TEntity extends DbEntity> {
   ): IEntityQueryable<TEntity> {
     const schema = this._getSchema();
 
-    // Create a selector that selects all columns only (not navigation properties)
-    const allColumnsSelector = (e: any) => {
-      const result: any = {};
-      // Copy all column properties
-      for (const colName of Object.keys(schema.columns)) {
-        result[colName] = e[colName];
-      }
-      // Add navigation properties as non-enumerable getters
-      // This allows chained selectors like .select(u => ({ posts: u.posts!.where(...) }))
-      // but they won't be included in the default query output
-      for (const relName of Object.keys(schema.relations)) {
-        Object.defineProperty(result, relName, {
-          get: () => e[relName],
-          enumerable: false,  // Non-enumerable so it's NOT included in default selection
-          configurable: true,
-        });
-      }
-      return result;
-    };
+    // Own enumerable columns + navigation getters inherited from the per-schema prototype
+    // (see createSelectAllRow): the chained-selector surface is unchanged, the default
+    // projection stays columns-only.
+    const allColumnsSelector = (e: any) => createSelectAllRow(schema, e);
 
     const queryBuilder = this.context.getTable(this.tableName)
       .where(condition as any)
@@ -3556,20 +3609,8 @@ export class DbEntityTable<TEntity extends DbEntity> {
    */
   private asEntityQueryable(): IEntityQueryable<TEntity> {
     const schema = this._getSchema();
-    const allColumnsSelector = (e: any) => {
-      const result: any = {};
-      for (const colName of Object.keys(schema.columns)) {
-        result[colName] = e[colName];
-      }
-      for (const relName of Object.keys(schema.relations)) {
-        Object.defineProperty(result, relName, {
-          get: () => e[relName],
-          enumerable: false,
-          configurable: true,
-        });
-      }
-      return result;
-    };
+    // See createSelectAllRow for the shape (own enumerable columns, inherited navigations).
+    const allColumnsSelector = (e: any) => createSelectAllRow(schema, e);
 
     const queryBuilder = this.context.getTable(this.tableName).select(allColumnsSelector);
     return queryBuilder as any as IEntityQueryable<TEntity>;
@@ -3661,25 +3702,8 @@ export class DbEntityTable<TEntity extends DbEntity> {
   with(...ctes: DbCte<any>[]): IEntityQueryable<TEntity> {
     const schema = this._getSchema();
 
-    // Create a selector that selects all columns only (not navigation properties)
-    const allColumnsSelector = (e: any) => {
-      const result: any = {};
-      // Copy all column properties
-      for (const colName of Object.keys(schema.columns)) {
-        result[colName] = e[colName];
-      }
-      // Add navigation properties as non-enumerable getters
-      // This allows chained selectors like .select(u => ({ posts: u.posts!.where(...) }))
-      // but they won't be included in the default query output
-      for (const relName of Object.keys(schema.relations)) {
-        Object.defineProperty(result, relName, {
-          get: () => e[relName],
-          enumerable: false,  // Non-enumerable so it's NOT included in default selection
-          configurable: true,
-        });
-      }
-      return result;
-    };
+    // See createSelectAllRow for the shape (own enumerable columns, inherited navigations).
+    const allColumnsSelector = (e: any) => createSelectAllRow(schema, e);
 
     const queryBuilder = this.context.getTable(this.tableName)
       .with(...ctes)
