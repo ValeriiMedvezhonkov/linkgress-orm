@@ -1,4 +1,5 @@
 import { DatabaseClient } from '../../database/database-client.interface';
+import { collectionMarkerPattern } from '../query-utils';
 import {
   ICollectionStrategy,
   CollectionStrategyType,
@@ -55,7 +56,7 @@ export class TempTableCollectionStrategy implements ICollectionStrategy {
    */
   private rewriteCollectionMarker(expr: string | undefined, targetTable: string): string | undefined {
     if (!expr) return expr;
-    const markerPattern = new RegExp(`"__collection_${targetTable}__"`, 'g');
+    const markerPattern = collectionMarkerPattern(targetTable, false);
     return expr.replace(markerPattern, `"${targetTable}"`);
   }
 

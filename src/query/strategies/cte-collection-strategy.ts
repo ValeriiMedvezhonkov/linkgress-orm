@@ -1,4 +1,5 @@
 import { DatabaseClient } from '../../database/database-client.interface';
+import { collectionMarkerPattern } from '../query-utils';
 import {
   ICollectionStrategy,
   CollectionStrategyType,
@@ -251,7 +252,7 @@ export class CteCollectionStrategy implements ICollectionStrategy {
     // For CTE, we use the actual table name in FROM (no aliasing), so marker becomes table name
     const rewriteCollectionMarker = (expr: string | undefined): string | undefined => {
       if (!expr) return expr;
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"`, 'g');
+      const markerPattern = collectionMarkerPattern(targetTable, false);
       return expr.replace(markerPattern, `"${targetTable}"`);
     };
 
@@ -365,7 +366,7 @@ GROUP BY "__fk_${foreignKey}"
     // Helper to rewrite the collection marker alias to the actual table name
     const rewriteCollectionMarker = (expr: string | undefined): string | undefined => {
       if (!expr) return expr;
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"`, 'g');
+      const markerPattern = collectionMarkerPattern(targetTable, false);
       return expr.replace(markerPattern, `"${targetTable}"`);
     };
 
@@ -483,7 +484,7 @@ WHERE "__rn" = 1
 
     // Helper to rewrite the collection marker alias to the actual table name
     const rewriteCollectionMarker = (expr: string): string => {
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"`, 'g');
+      const markerPattern = collectionMarkerPattern(targetTable, false);
       return expr.replace(markerPattern, `"${targetTable}"`);
     };
 
@@ -573,7 +574,7 @@ GROUP BY "__fk_${foreignKey}"
     // Helper to rewrite the collection marker alias to the actual table name
     const rewriteCollectionMarker = (expr: string | undefined): string | undefined => {
       if (!expr) return expr;
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"`, 'g');
+      const markerPattern = collectionMarkerPattern(targetTable, false);
       return expr.replace(markerPattern, `"${targetTable}"`);
     };
 
@@ -726,7 +727,7 @@ GROUP BY "__fk_${foreignKey}"
     // Helper to rewrite the collection marker alias to the actual table name
     const rewriteCollectionMarker = (expr: string | undefined): string | undefined => {
       if (!expr) return expr;
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"`, 'g');
+      const markerPattern = collectionMarkerPattern(targetTable, false);
       return expr.replace(markerPattern, `"${targetTable}"`);
     };
 
@@ -793,7 +794,7 @@ GROUP BY ${fkRef}
     // Helper to rewrite the collection marker alias to the actual table name
     const rewriteCollectionMarker = (expr: string | undefined): string | undefined => {
       if (!expr) return expr;
-      const markerPattern = new RegExp(`"__collection_${targetTable}__"`, 'g');
+      const markerPattern = collectionMarkerPattern(targetTable, false);
       return expr.replace(markerPattern, `"${targetTable}"`);
     };
 
